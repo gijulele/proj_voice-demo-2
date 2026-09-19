@@ -1,0 +1,12 @@
+{
+  "name": "proj-voice-demo-supabase",
+  "private": true,
+  "type": "module",
+  "description": "Supabase 스키마/시드 SQL 과 RLS 검증 스크립트 (Next.js 앱은 app/ 하위에 따로 있음)",
+  "scripts": {
+    "rls:test": "node supabase/rls_test.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}
