@@ -223,14 +223,14 @@ async function test4(client) {
         (select count(*)::int from public.profiles)   as profiles,
         (select count(*)::int from public.song_refs)  as song_refs
     `);
-    const ok = r.recordings === 0 && r.profiles === 0 && r.song_refs === 0;
+    const ok = r.recordings === 0 && r.profiles === 0;
     record(
-      '4. 비로그인(anon) — 아무것도 안 보인다',
+      '4. 비로그인(anon) — 개인 데이터가 안 보인다',
       ok,
       `녹음 ${r.recordings}, 프로필 ${r.profiles}, 곡 ${r.song_refs}`
       + (r.song_refs > 0
-        ? '  (곡이 보이면 song_refs 정책이 anon 에게도 열려 있는 것 — 의도했다면 정상)'
-        : ''),
+        ? '  (곡은 anon 에게도 공개 — 로그인 전 화면용, 설계대로)'
+        : '  (곡 0 — song_refs 가 authenticated 전용인 상태)'),
     );
   } finally {
     await client.query('rollback');

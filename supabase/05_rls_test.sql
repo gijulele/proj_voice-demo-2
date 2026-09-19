@@ -171,21 +171,22 @@ begin;
   set local role anon;
 
   select
-    (select count(*) from public.recordings) as 녹음수,
-    (select count(*) from public.profiles)   as 프로필수,
-    (select count(*) from public.song_refs)  as 곡수;
-  -- 기대: 전부 0.
-  --       song_refs 정책이 "to authenticated" 라서 곡수도 0 이 맞다.
-  --       (로그인 전에도 곡 목록을 보여주고 싶다면 아래 참고 블록)
+    (select count(*)::int from public.recordings) as 녹음수,
+    (select count(*)::int from public.profiles)   as 프로필수,
+    (select count(*)::int from public.song_refs)  as 곡수;
+  -- 기대: 녹음수 0, 프로필수 0, 곡수 10
+  --       song_refs 정책이 "to anon, authenticated" 라 곡 목록은 보이는 게 정상이다
+  --       (로그인 전 랜딩 화면에 곡을 띄우기 위해서다)
+  -- ★ 녹음수/프로필수가 0 이 아니면 RLS 가 새고 있는 것이다.
 
 rollback;
 
 
 -- ------------------------------------------------------------
--- 참고) 로그인 전에도 곡 목록을 보여주고 싶을 때만 실행
+-- 참고) 로그인한 사람만 곡 목록을 보게 하고 싶을 때만 실행
 --       실행했다면 04_rls_policies.sql 의 song_refs 정책도 같이 고칠 것.
 --       (안 고치면 04 를 다시 Run 할 때 원래대로 되돌아간다)
 -- ------------------------------------------------------------
 -- drop policy if exists "song_refs_select_all" on public.song_refs;
 -- create policy "song_refs_select_all" on public.song_refs
---   for select to anon, authenticated using (true);
+--   for select to authenticated using (true);

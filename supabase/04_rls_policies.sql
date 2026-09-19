@@ -83,12 +83,12 @@ create policy "key_results_insert_own" on public.key_results
   for insert with check (auth.uid() = user_id);
 
 -- song_refs : 공용 프리셋 곡 목록 (user_id 없음)
---   로그인한 사람은 모두 읽기 가능. 곡 추가·수정은 service_role(서버)만.
---   ※ 로그인 전 화면에서도 곡 목록을 보여주려면 to anon, authenticated 로 바꾼다
---     (05_rls_test.sql 맨 아래 참고 블록에 적어 두었다)
+--   읽기는 누구나(비로그인 포함). 곡 추가·수정은 service_role(서버)만.
+--   ※ 로그인 전 랜딩 화면에서도 곡 목록을 보여주기 위해 anon 을 포함한다.
+--     로그인한 사람만 보게 하려면 to authenticated 로 바꾼다.
 drop policy if exists "song_refs_select_all" on public.song_refs;
 create policy "song_refs_select_all" on public.song_refs
-  for select to authenticated using (true);
+  for select to anon, authenticated using (true);
 
 -- ------------------------------------------------------------
 -- 4) 확인 — 정책이 붙었는지 바로 보인다

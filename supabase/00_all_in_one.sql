@@ -225,7 +225,7 @@ create policy "key_results_insert_own" on public.key_results
 
 drop policy if exists "song_refs_select_all" on public.song_refs;
 create policy "song_refs_select_all" on public.song_refs
-  for select to authenticated using (true);
+  for select to anon, authenticated using (true);
 
 -- ------------------------------------------------------------
 -- Storage 버킷 (녹음 파일, 비공개)
