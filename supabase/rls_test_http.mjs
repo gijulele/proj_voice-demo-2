@@ -48,6 +48,9 @@ ${join(ROOT, '.env.local')} 에 넣어주세요.
   process.exit(2);
 }
 
+// 02_seed_song_refs.sql 이 넣는 프리셋 곡 수. 시드를 늘리면 여기도 같이 고친다.
+const SONG_REFS_COUNT = 10;
+
 // ------------------------------------------------------------
 // 결과 수집
 // ------------------------------------------------------------
@@ -109,16 +112,22 @@ for (const table of ['recordings', 'analyses', 'key_results', 'profiles']) {
   );
 }
 
-// 2. song_refs — 정책이 "to authenticated" 라 anon 에게는 0행이 설계대로다.
+// 2. song_refs — 공용 프리셋 곡 목록. 정책이 "to anon, authenticated" 라
+//    로그인 전 랜딩 화면에서도 10곡이 다 보이는 게 설계대로다.
+//    ※ 0행이면 정책이 authenticated 전용으로 되돌아갔거나 시드가 안 들어간 것.
 {
   const r = await api('song_refs?select=id');
   const n = rows(r);
   record(
-    'anon → song_refs 읽기',
-    r.status === 200 || [401, 403].includes(r.status),
-    n === 0 || r.status !== 200
-      ? '0행 — 설계대로(로그인해야 곡 목록이 보임)'
-      : `${n}행 공개 중 — 로그인 전 곡 목록 노출을 의도했다면 정상`,
+    'anon → song_refs 공개 10곡',
+    r.status === 200 && n === SONG_REFS_COUNT,
+    r.status !== 200
+      ? `HTTP ${r.status} — 정책이 anon 을 빼고 있다 (04_rls_policies.sql 재실행)`
+      : n === SONG_REFS_COUNT
+        ? `${n}행 — 설계대로(로그인 전에도 곡 목록 공개)`
+        : n === 0
+          ? '★ 0행 — 정책이 authenticated 전용이거나 02_seed_song_refs.sql 미실행'
+          : `★ ${n}행 (기대 ${SONG_REFS_COUNT}) — 시드가 덜/더 들어갔다`,
   );
 }
 
@@ -187,7 +196,8 @@ if (!password) {
     {
       const r = await api('song_refs?select=id', { token: t });
       const n = rows(r);
-      record('로그인 → 곡 목록 10개', n === 10, `${n}행 (기대 10)`);
+      record(`로그인 → 곡 목록 ${SONG_REFS_COUNT}개`, n === SONG_REFS_COUNT,
+        `${n}행 (기대 ${SONG_REFS_COUNT})`);
     }
 
     // 남의 user_id 로 쓰기 시도 → 거부되어야 한다
