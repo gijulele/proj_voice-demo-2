@@ -161,6 +161,19 @@ const password = env.DEMO_PASSWORD;
 
 console.log('\n[로그인 상태에서 무엇이 보이는가]');
 
+// Supabase Auth 는 라우팅 불가능한 최상위 도메인을 거부한다(email_address_invalid).
+// 대시보드 Add user 로도 만들 수 없는 경우가 있어 미리 알려준다.
+const UNROUTABLE_TLDS = ['test', 'local', 'localhost', 'invalid', 'example'];
+const emailTld = (email.split('@')[1] ?? '').split('.').pop()?.toLowerCase();
+const unroutable = UNROUTABLE_TLDS.includes(emailTld);
+
+if (unroutable) {
+  console.log(`  주의  DEMO_EMAIL 도메인이 .${emailTld} 입니다.`);
+  console.log(`        Supabase Auth 는 이 도메인을 "email_address_invalid" 로 거부합니다.`);
+  console.log(`        계정 생성이 안 되면 실제 도메인(예: demo@vocalfit.app)으로 바꾸고`);
+  console.log(`        03_seed_demo_data.sql 의 v_email 도 같이 고쳐서 다시 Run 하세요.`);
+}
+
 if (!password) {
   console.log(`  SKIP  .env.local 의 DEMO_PASSWORD 가 비어 있습니다.`);
   console.log(`        ${email} 계정 비밀번호를 넣으면 이 검사도 돌아갑니다.`);
@@ -169,7 +182,9 @@ if (!password) {
 
   if (auth.error) {
     record(`로그인 (${email})`, false, auth.error
-      + '  — 계정이 없거나 비밀번호가 다릅니다. Authentication > Users 확인.');
+      + (unroutable
+        ? `  — .${emailTld} 도메인이라 계정 자체가 만들어지지 않았을 수 있습니다(위 주의 참고).`
+        : '  — 계정이 없거나 비밀번호가 다릅니다. Authentication > Users 확인.'));
   } else {
     record(`로그인 (${email})`, true, `uid ${auth.uid}`);
     const t = auth.token;
