@@ -7,8 +7,10 @@
 // 실행:  node supabase/rls_test.mjs
 // 종료코드: 0 = 전부 통과, 1 = 하나라도 실패 (CI 에 그대로 쓸 수 있다)
 //
-// 접속정보는 저장소 루트 .env.local 의 DATABASE_URL 에서 읽는다.
-// (.env* 는 .gitignore 에 있으므로 커밋되지 않는다)
+// 접속정보는 저장소 루트 .env.local 에서 읽는다 (.gitignore 처리됨).
+//   방법 A) DATABASE_URL 한 줄을 직접 넣는다 (대시보드에서 복사, 가장 확실)
+//   방법 B) NEXT_PUBLIC_SUPABASE_URL + SUPABASE_DB_PASSWORD 두 줄만 넣으면
+//           이 스크립트가 접속 문자열을 조립한다 (비밀번호 특수문자도 알아서 인코딩)
 // ============================================================
 
 import { readFileSync } from 'node:fs';
@@ -21,23 +23,44 @@ const DEMO_EMAIL = process.env.DEMO_EMAIL ?? 'demo@vocalfit.test';
 const STRANGER = '00000000-0000-0000-0000-000000000099';
 
 // ------------------------------------------------------------
-// .env.local 에서 DATABASE_URL 읽기
+// .env.local 파싱 + 접속 문자열 결정
 // ------------------------------------------------------------
-function loadDatabaseUrl() {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-
-  for (const name of ['.env.local', '.env']) {
+function loadEnv() {
+  const env = {};
+  for (const name of ['.env', '.env.local']) {   // .env.local 이 나중 = 우선
     try {
       const text = readFileSync(join(ROOT, name), 'utf8');
       for (const line of text.split(/\r?\n/)) {
-        const m = line.match(/^\s*(?:export\s+)?DATABASE_URL\s*=\s*(.*)$/);
-        if (m) return m[1].trim().replace(/^["']|["']$/g, '');
+        const m = line.match(/^\s*(?:export\s+)?([A-Z0-9_]+)\s*=\s*(.*)$/i);
+        if (m) env[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
       }
     } catch {
       /* 파일 없음 — 다음 후보로 */
     }
   }
-  return null;
+  return env;
+}
+
+// https://<ref>.supabase.co  →  <ref>
+function projectRef(supabaseUrl) {
+  const m = String(supabaseUrl ?? '').match(/https?:\/\/([a-z0-9]+)\.supabase\.(co|in)/i);
+  return m ? m[1] : null;
+}
+
+// 접속 문자열을 만든다. 반환: { url, how } 또는 null
+function resolveConnection(env) {
+  const direct = process.env.DATABASE_URL ?? env.DATABASE_URL;
+  if (direct) return { url: direct, how: 'DATABASE_URL' };
+
+  const ref = projectRef(env.NEXT_PUBLIC_SUPABASE_URL ?? env.SUPABASE_URL);
+  const pw = process.env.SUPABASE_DB_PASSWORD ?? env.SUPABASE_DB_PASSWORD;
+  if (!ref || !pw) return null;
+
+  // 비밀번호의 @ : / # 같은 문자를 직접 인코딩해 준다 (흔한 실수 지점)
+  const host = env.SUPABASE_DB_HOST ?? `db.${ref}.supabase.co`;
+  const user = host.includes('pooler') ? `postgres.${ref}` : 'postgres';
+  const url = `postgresql://${user}:${encodeURIComponent(pw)}@${host}:5432/postgres`;
+  return { url, how: `NEXT_PUBLIC_SUPABASE_URL + SUPABASE_DB_PASSWORD → ${host}` };
 }
 
 // ------------------------------------------------------------
@@ -217,16 +240,34 @@ async function test4(client) {
 // ------------------------------------------------------------
 // main
 // ------------------------------------------------------------
-const url = loadDatabaseUrl();
-if (!url) {
-  console.error(`
-DATABASE_URL 이 없습니다.
+const env = loadEnv();
+const conn = resolveConnection(env);
 
-  1) Supabase 대시보드 > Project Settings > Database
-     > Connection string > URI 를 복사 (Session pooler 권장)
-  2) ${join(ROOT, '.env.local')} 파일에 아래 한 줄로 저장
+if (!conn) {
+  const ref = projectRef(env.NEXT_PUBLIC_SUPABASE_URL ?? env.SUPABASE_URL);
+  console.error(`
+접속정보가 없습니다.  ${join(ROOT, '.env.local')} 을 채워주세요.
+
+${ref
+    ? `프로젝트 주소는 읽었습니다 (ref: ${ref}). DB 비밀번호 한 줄만 더 필요합니다:
+
+     SUPABASE_DB_PASSWORD=여기에_DB_비밀번호`
+    : `방법 A (쉬움) — 아래 두 줄
+
+     NEXT_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
+     SUPABASE_DB_PASSWORD=여기에_DB_비밀번호`}
+
+  방법 B — 대시보드에서 접속 문자열을 통째로 복사해 한 줄로
 
      DATABASE_URL=postgresql://postgres.xxxx:비밀번호@...pooler.supabase.com:5432/postgres
+
+  DB 비밀번호는 로그인 비밀번호가 아니라 프로젝트 생성 시 정한 값입니다.
+  기억나지 않으면  Project Settings > Database > Reset database password.
+
+  IPv6 환경이 아니면 db.<ref>.supabase.co 직결이 안 될 수 있습니다.
+  그때는 대시보드의 Session pooler 호스트를 아래처럼 지정하세요:
+
+     SUPABASE_DB_HOST=aws-0-ap-northeast-2.pooler.supabase.com
 
   (.env* 는 .gitignore 에 있어 커밋되지 않습니다)
 `);
@@ -234,16 +275,21 @@ DATABASE_URL 이 없습니다.
 }
 
 const client = new pg.Client({
-  connectionString: url,
+  connectionString: conn.url,
   ssl: { rejectUnauthorized: false },
 });
 
 try {
   await client.connect();
 } catch (err) {
-  console.error(`\n접속 실패: ${err.message}\n`);
-  console.error('비밀번호에 @ : / 같은 특수문자가 있으면 URL 인코딩이 필요합니다.');
-  console.error('IPv6 오류라면 Direct connection 대신 Session pooler URI 를 쓰세요.\n');
+  console.error(`\n접속 실패 (${conn.how}): ${err.message}\n`);
+  if (/ENOTFOUND|EAI_AGAIN|ENETUNREACH/.test(err.message)) {
+    console.error('호스트를 찾지 못했습니다. IPv6 미지원 환경일 가능성이 큽니다.');
+    console.error('.env.local 에 Session pooler 호스트를 추가해 보세요:');
+    console.error('  SUPABASE_DB_HOST=aws-0-ap-northeast-2.pooler.supabase.com\n');
+  } else if (/password|authentication/i.test(err.message)) {
+    console.error('비밀번호가 틀렸습니다. Project Settings > Database 에서 재설정할 수 있습니다.\n');
+  }
   process.exit(2);
 }
 
